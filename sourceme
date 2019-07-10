@@ -1,1 +1,4 @@
 export PYTHONPATH="/home/alejandro/virtual_chemist/htmd/":$PYTHONPATH
+export PYTHONPATH="/home/alejandro/rl_chemist/htmd/":$PYTHONPATH
+export PYTHONPATH="/home/alejandro/moleculekit/":$PYTHONPATH
+
