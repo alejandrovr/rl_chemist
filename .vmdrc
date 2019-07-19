@@ -1,0 +1,28 @@
+# add personalized keyboard shortcuts 
+user add key E echo on
+user add key e echo off
+user add key g display reset
+user add key A stage location bottom
+user add key m mol list
+
+# position the stage and axes
+#axes location lowerleft
+axes location off
+stage location off
+
+# position and turn on menus
+menu main move 5 196
+menu display move 386 90
+menu animate move 124 7
+menu edit move 125 196
+menu graphics move 5 455
+menu files move 5 496
+menu mol move 5 745
+
+menu main on
+
+# start the scene a-rockin'
+#rock y by 1
+
+color Display Background black
+display height 1.1
