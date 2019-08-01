@@ -88,24 +88,26 @@ init_screen = get_screen()
 _, _, screen_height, screen_width = init_screen.shape
 
 # Get number of actions from gym action space
-policy_actions = ['rotx','roty','rotz','scalein','scaleout','submit']
+policy_actions = ['rotx','roty','rotz','scalein','scaleout']
 n_actions = len(policy_actions)
 
 policy_net = DQN(screen_height, screen_width, n_actions).to(device)
+#policy_net.load_state_dict(torch.load('./first_working_agent.torch'))
 target_net = DQN(screen_height, screen_width, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0001)
-optimizer = optim.SGD(policy_net.parameters(), lr=0.001)
+optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
 memory = ReplayMemory(100) #cartopole 10000
 
 
 steps_done = 0
-
+policy_pred_rew = []
 
 def select_action(state):
     global steps_done
+    global policy_pred_rew
     sample = random.random()
     #The more actions that you take, the better the net is at predicting the expected reward
     #so as you progress, try to use more frequentely the policy net suggested action (exploit vs explore)
@@ -117,8 +119,9 @@ def select_action(state):
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
             pred_action_reward = policy_net(state)
-            print('rotx','roty','rotz','scalein','scaleout','submit')
+            #print('rotx','roty','rotz','scalein','scaleout','submit')
             print('POLICY',pred_action_reward)
+            policy_pred_rew.append(pred_action_reward)
             return pred_action_reward.max(1)[1].view(1, 1)
     else:
         print('RANDOM')
@@ -147,6 +150,18 @@ def plot_durations():
         display.clear_output(wait=True)
         display.display(plt.gcf())
 
+def plot_action_pred_val():
+    plt.figure(1)
+    actions_val = []
+    for row in policy_pred_rew:
+        pred_val_action = row.cpu().numpy().tolist()[0]
+        actions_val.append(pred_val_action)
+
+    action_rotx = [i[0] for i in actions_val]
+    if len(action_rotx)>0:
+        print("HERE!")
+        plt.plot(np.array(action_rotx),color="red")
+        plt.show()
 
 #the optimizer
 def optimize_model():
@@ -167,8 +182,8 @@ def optimize_model():
     state_batch = torch.cat(batch.state)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
-    #print(action_batch)
-    #print(reward_batch)
+    #print('action_batch',action_batch)
+    #print('reward_batch',reward_batch)
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken. These are the actions which would've been taken
     # for each batch state according to policy_net
@@ -187,7 +202,7 @@ def optimize_model():
     # Compute Huber loss
     #loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
     criterion = nn.MSELoss()
-    print('expected_action_values',expected_state_action_values)
+    #print('expected_action_values',expected_state_action_values)
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     #NOTE: state_action_values  and expected_action_values tends to go to 1 in all cells
     # Optimize the model
@@ -231,6 +246,7 @@ for i_episode in range(num_episodes):
             #episode_durations.append(t + 1)
             episode_durations.append(reward)
             plot_durations()
+            #plot_action_pred_val()
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
