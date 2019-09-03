@@ -88,23 +88,24 @@ init_screen = get_screen()
 _, _, screen_height, screen_width = init_screen.shape
 
 # Get number of actions from gym action space
-
-policy_actions = ['rotx','roty','rotz','switch_dir','movedih','nextdih']
+policy_actions = env.available_actions
 n_actions = len(policy_actions)
 
-num_ftrs = 51200
+num_ftrs = 184832
 
 #policy net
 policy_net = models.resnet18(pretrained=True)
-policy_net.avgpool = nn.AvgPool2d(16, stride=1)
+for param in policy_net.parameters():
+    param.requires_grad = False
 policy_net.fc = nn.Linear(num_ftrs, n_actions)
 policy_net.to(device)
 #policy_net = DQN(screen_height, screen_width, n_actions).to(device)
-#policy_net.load_state_dict(torch.load('./first_working_agent.torch'))
+policy_net.load_state_dict(torch.load('./new_rl_agent.torch'))
 
 #target net
 target_net = models.resnet18(pretrained=True)
-target_net.avgpool = nn.AvgPool2d(16, stride=1)
+for param in target_net.parameters():
+    param.requires_grad = False
 target_net.fc = nn.Linear(num_ftrs, n_actions)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
@@ -113,8 +114,7 @@ target_net.to(device)
 #target_net.load_state_dict(policy_net.state_dict())
 #target_net.eval()
 
-#optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0001)
-optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
+optimizer = optim.SGD(policy_net.fc.parameters(), lr=0.0001)
 memory = ReplayMemory(1000) #cartopole 10000
 
 
@@ -198,8 +198,6 @@ def optimize_model():
     state_batch = torch.cat(batch.state)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
-    #print('action_batch',action_batch)
-    #print('reward_batch',reward_batch)
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken. These are the actions which would've been taken
     # for each batch state according to policy_net
@@ -218,13 +216,12 @@ def optimize_model():
     # Compute Huber loss
     #loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
     criterion = nn.MSELoss()
-    #print('expected_action_values',expected_state_action_values)
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     #NOTE: state_action_values  and expected_action_values tends to go to 1 in all cells
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
-    for param in policy_net.parameters():
+    for param in policy_net.fc.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
@@ -258,10 +255,8 @@ for i_episode in range(num_episodes):
         # Perform one step of the optimization (on the target network)
         optimize_model()
         if done:
-            #episode_durations.append(t + 1)
             episode_durations.append(reward)
             plot_durations()
-            #plot_action_pred_val()
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
@@ -270,6 +265,8 @@ for i_episode in range(num_episodes):
     env.reset()
     
 print('Complete')
+torch.save(target_net.state_dict(), './new_rl_agent.torch')
+
 plt.ioff()
 plt.show()
 
