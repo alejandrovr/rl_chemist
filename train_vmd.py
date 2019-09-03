@@ -71,7 +71,7 @@ def get_screen():
     return screen.unsqueeze(0).unsqueeze(0).float().to(device)
 
 
-env.reset()
+#env.reset()
 
 #GETTING READY
 BATCH_SIZE = 10 #128
@@ -88,7 +88,8 @@ init_screen = get_screen()
 _, _, screen_height, screen_width = init_screen.shape
 
 # Get number of actions from gym action space
-policy_actions = ['rotx','roty','rotz','scalein','scaleout']
+
+policy_actions = ['rotx','roty','rotz','switch_dir','movedih','nextdih']
 n_actions = len(policy_actions)
 
 policy_net = DQN(screen_height, screen_width, n_actions).to(device)
@@ -99,7 +100,7 @@ target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0001)
 optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
-memory = ReplayMemory(100) #cartopole 10000
+memory = ReplayMemory(1000) #cartopole 10000
 
 
 steps_done = 0
@@ -119,7 +120,7 @@ def select_action(state):
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
             pred_action_reward = policy_net(state)
-            #print('rotx','roty','rotz','scalein','scaleout','submit')
+            #['rotx','roty','rotz','switch_dir','movedih','nextdih']
             print('POLICY',pred_action_reward)
             policy_pred_rew.append(pred_action_reward)
             return pred_action_reward.max(1)[1].view(1, 1)
@@ -217,7 +218,6 @@ def optimize_model():
 num_episodes = 500
 for i_episode in range(num_episodes):
     # Initialize the environment and state
-    env.reset()
     current_screen = get_screen() #this is zero, right?
     state = current_screen
     for t in count():
@@ -251,7 +251,9 @@ for i_episode in range(num_episodes):
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
-
+        
+    env.reset()
+    
 print('Complete')
 plt.ioff()
 plt.show()
