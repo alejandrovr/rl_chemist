@@ -15,7 +15,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 from net import DQN
-
+from torchvision import datasets, models, transforms
 
 #GYM SETUP AND DEVICES
 env = gym.make('tictac4-v0')
@@ -67,8 +67,8 @@ def get_screen():
     #screen = env.render(mode='rgb_array').transpose((2, 0, 1))
     screen = env.state
     screen = torch.from_numpy(screen)
-    # Resize, and add a batch dimension (BCHW)
-    return screen.unsqueeze(0).unsqueeze(0).float().to(device)
+    # Resize and add a batch dimension (BCHW)
+    return screen.unsqueeze(0).transpose(1,3).float().to(device)
 
 
 #env.reset()
@@ -92,11 +92,26 @@ _, _, screen_height, screen_width = init_screen.shape
 policy_actions = ['rotx','roty','rotz','switch_dir','movedih','nextdih']
 n_actions = len(policy_actions)
 
-policy_net = DQN(screen_height, screen_width, n_actions).to(device)
+num_ftrs = 51200
+
+#policy net
+policy_net = models.resnet18(pretrained=True)
+policy_net.avgpool = nn.AvgPool2d(16, stride=1)
+policy_net.fc = nn.Linear(num_ftrs, n_actions)
+policy_net.to(device)
+#policy_net = DQN(screen_height, screen_width, n_actions).to(device)
 #policy_net.load_state_dict(torch.load('./first_working_agent.torch'))
-target_net = DQN(screen_height, screen_width, n_actions).to(device)
+
+#target net
+target_net = models.resnet18(pretrained=True)
+target_net.avgpool = nn.AvgPool2d(16, stride=1)
+target_net.fc = nn.Linear(num_ftrs, n_actions)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
+target_net.to(device) 
+#target_net = DQN(screen_height, screen_width, n_actions).to(device)
+#target_net.load_state_dict(policy_net.state_dict())
+#target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters(), lr=0.0001)
 optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
