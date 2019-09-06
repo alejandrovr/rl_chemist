@@ -36,7 +36,7 @@ class DQN(nn.Module):
 
     def __init__(self, h, w, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=5, stride=2)
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
         self.bn1 = nn.BatchNorm2d(16)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
         self.bn2 = nn.BatchNorm2d(32)
@@ -55,6 +55,20 @@ class DQN(nn.Module):
     # Called with either one element to determine next action, or a batch
     # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
+        debug = False
+        if debug:
+            import numpy as np
+            #x is torch.float32
+            ccc = x.cpu().detach().numpy()
+            import matplotlib.pyplot as plt
+            if ccc.shape[0]>1:
+                for debudidx in range(ccc.shape[0]):
+                    image = ccc[debudidx] #first item from batch
+                    imaget = image.transpose(2,1,0) #make color channel last
+                    plt.figure()
+                    plt.imshow(imaget[:,:,:])
+                    input('done?')
+
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))

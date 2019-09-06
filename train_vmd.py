@@ -19,7 +19,9 @@ from torchvision import datasets, models, transforms
 
 #GYM SETUP AND DEVICES
 env = gym.make('tictac4-v0')
-
+import os
+from glob import glob
+[os.remove(i) for i in glob("/home/alejandro/rl_chemist/debug_images/*.png")]
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -56,22 +58,16 @@ class ReplayMemory(object):
         return len(self.memory)
 
 
-#RENDERING IMAGES
-resize = T.Compose([T.ToPILImage(),
-                    T.Resize(40, interpolation=Image.CUBIC),
-                    T.ToTensor()])
-
 def get_screen():
     # Returned screen requested by gym is 400x600x3, but is sometimes larger
     # such as 800x1200x3. Transpose it into torch order (CHW).
     #screen = env.render(mode='rgb_array').transpose((2, 0, 1))
     screen = env.state
     screen = torch.from_numpy(screen)
-    # Resize and add a batch dimension (BCHW)
     return screen.unsqueeze(0).transpose(1,3).float().to(device)
 
 
-#env.reset()
+env.reset()
 
 #GETTING READY
 BATCH_SIZE = 10 #128
@@ -79,7 +75,7 @@ GAMMA = 0.999
 EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 200
-TARGET_UPDATE = 10
+TARGET_UPDATE = 2
 
 # Get screen size so that we can initialize layers correctly based on shape
 # returned from AI gym. Typical dimensions at this point are close to 3x40x90
@@ -93,29 +89,13 @@ n_actions = len(policy_actions)
 
 num_ftrs = 184832
 
-#policy net
-policy_net = models.resnet18(pretrained=True)
-for param in policy_net.parameters():
-    param.requires_grad = False
-policy_net.fc = nn.Linear(num_ftrs, n_actions)
-policy_net.to(device)
-#policy_net = DQN(screen_height, screen_width, n_actions).to(device)
-policy_net.load_state_dict(torch.load('./new_rl_agent.torch'))
-
-#target net
-target_net = models.resnet18(pretrained=True)
-for param in target_net.parameters():
-    param.requires_grad = False
-target_net.fc = nn.Linear(num_ftrs, n_actions)
+policy_net = DQN(screen_height, screen_width, n_actions).to(device)
+target_net = DQN(screen_height, screen_width, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
-target_net.to(device) 
-#target_net = DQN(screen_height, screen_width, n_actions).to(device)
-#target_net.load_state_dict(policy_net.state_dict())
-#target_net.eval()
 
-optimizer = optim.SGD(policy_net.fc.parameters(), lr=0.0001)
-memory = ReplayMemory(1000) #cartopole 10000
+optimizer = optim.SGD(policy_net.parameters(), lr=0.01)
+memory = ReplayMemory(30) #cartopole 10000
 
 
 steps_done = 0
@@ -134,14 +114,34 @@ def select_action(state):
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
-            pred_action_reward = policy_net(state)
-            #['rotx','roty','rotz','switch_dir','movedih','nextdih']
-            print('POLICY',pred_action_reward)
+            pred_action_reward = policy_net(state) #SHOULDN'T I BE USING TARGETNET HERE? this one is not stable!
+            prednp = pred_action_reward.cpu().detach().numpy().flatten().tolist()
+            best_action_pred = env.available_actions[prednp.index(max(prednp))]
+
+            #print('POLICY')
+            #print([i for i in zip(prednp,env.available_actions)])
+            #print(pred_action_reward.max(1)[1].view(1, 1))
             policy_pred_rew.append(pred_action_reward)
+
+            inspect_batch = True
+            if inspect_batch:
+                import numpy as np
+                ccc = state.cpu().detach().numpy()
+                import matplotlib.pyplot as plt
+                image = ccc [0]
+                imaget = image.transpose(2,1,0) #make color channel last
+
+                plt.figure()
+                plt.title('act2take: {}'.format(best_action_pred))
+                plt.imshow(imaget[:,:,:])
+                plt.savefig('/home/alejandro/rl_chemist/debug_images/{}.png'.format(steps_done))
+
+                plt.close()
             return pred_action_reward.max(1)[1].view(1, 1)
     else:
-        print('RANDOM')
-        return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
+        acran = random.randrange(n_actions)
+        print('RANDOM',acran)
+        return torch.tensor([[acran]], device=device, dtype=torch.long)
 
 
 episode_durations = []
@@ -175,9 +175,9 @@ def plot_action_pred_val():
 
     action_rotx = [i[0] for i in actions_val]
     if len(action_rotx)>0:
-        print("HERE!")
         plt.plot(np.array(action_rotx),color="red")
         plt.show()
+
 
 #the optimizer
 def optimize_model():
@@ -198,6 +198,21 @@ def optimize_model():
     state_batch = torch.cat(batch.state)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
+    inspect_batch = False
+    if inspect_batch:
+        import numpy as np
+        ccc = state_batch.cpu().detach().numpy()
+        import matplotlib.pyplot as plt
+        for debudidx in range(ccc.shape[0]):
+            image = ccc[debudidx] #first item from batch
+            imaget = image.transpose(2,1,0) #make color channel last
+            rwd = reward_batch[debudidx].item()
+            action_taken = env.available_actions[action_batch[debudidx].item()]
+            plt.figure()
+            plt.title('rwd{}_act{}'.format(rwd,action_taken))
+            plt.imshow(imaget[:,:,:])
+        input('done?')
+
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken. These are the actions which would've been taken
     # for each batch state according to policy_net
@@ -213,21 +228,20 @@ def optimize_model():
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
-    # Compute Huber loss
-    #loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-    #NOTE: state_action_values  and expected_action_values tends to go to 1 in all cells
+
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
-    for param in policy_net.fc.parameters():
+    print('\n\n\nOptimizing...!')
+    for param in policy_net.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
 
 #RUN THE THING
-num_episodes = 500
+num_episodes = 50
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     current_screen = get_screen() #this is zero, right?
@@ -256,10 +270,11 @@ for i_episode in range(num_episodes):
         optimize_model()
         if done:
             episode_durations.append(reward)
-            plot_durations()
+            #plot_durations()
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
+        print('UPDATING TARGET NET')
         target_net.load_state_dict(policy_net.state_dict())
         
     env.reset()
