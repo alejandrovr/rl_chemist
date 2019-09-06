@@ -75,7 +75,7 @@ GAMMA = 0.999
 EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 200
-TARGET_UPDATE = 2
+TARGET_UPDATE = 20
 
 # Get screen size so that we can initialize layers correctly based on shape
 # returned from AI gym. Typical dimensions at this point are close to 3x40x90
@@ -87,14 +87,12 @@ _, _, screen_height, screen_width = init_screen.shape
 policy_actions = env.available_actions
 n_actions = len(policy_actions)
 
-num_ftrs = 184832
-
 policy_net = DQN(screen_height, screen_width, n_actions).to(device)
 target_net = DQN(screen_height, screen_width, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.SGD(policy_net.parameters(), lr=0.01)
+optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
 memory = ReplayMemory(30) #cartopole 10000
 
 
@@ -111,16 +109,11 @@ def select_action(state):
     steps_done += 1
     if sample > eps_threshold:
         with torch.no_grad():
-            # t.max(1) will return largest column value of each row.
-            # second column on max result is index of where max element was
-            # found, so we pick action with the larger expected reward.
             pred_action_reward = policy_net(state) #SHOULDN'T I BE USING TARGETNET HERE? this one is not stable!
             prednp = pred_action_reward.cpu().detach().numpy().flatten().tolist()
             best_action_pred = env.available_actions[prednp.index(max(prednp))]
 
-            #print('POLICY')
             #print([i for i in zip(prednp,env.available_actions)])
-            #print(pred_action_reward.max(1)[1].view(1, 1))
             policy_pred_rew.append(pred_action_reward)
 
             inspect_batch = True
@@ -140,7 +133,7 @@ def select_action(state):
             return pred_action_reward.max(1)[1].view(1, 1)
     else:
         acran = random.randrange(n_actions)
-        print('RANDOM',acran)
+        #print('RANDOM',acran)
         return torch.tensor([[acran]], device=device, dtype=torch.long)
 
 
@@ -224,19 +217,26 @@ def optimize_model():
     # This is merged based on the mask, such that we'll have either the expected
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+    #next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
     # Compute the expected Q values
-    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
-
+    expected_state_action_values = next_state_values + reward_batch #(next_state_values * GAMMA) + reward_batch
+    print('\n\nAC:',action_batch.cpu().detach().numpy().flatten().tolist())
+    print('GT:',expected_state_action_values.cpu().detach().numpy().flatten().tolist())
+    print('PD:',state_action_values.cpu().detach().numpy().flatten().tolist())
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
-    print('\n\n\nOptimizing...!')
+    print('Loss:',loss.item())
+    #print('\n\n\nOptimizing...! NOT CLAMPINNNNNG')
     for param in policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)
+        pass
+        #print('\nAnother layer')
+        #print('min',param.grad.data.min())
+        #print('max',param.grad.data.max())
+        #print('mean',param.grad.data.mean())
     optimizer.step()
 
 
@@ -274,12 +274,12 @@ for i_episode in range(num_episodes):
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
-        print('UPDATING TARGET NET')
         target_net.load_state_dict(policy_net.state_dict())
         
     env.reset()
     
 print('Complete')
+plot_durations()
 torch.save(target_net.state_dict(), './new_rl_agent.torch')
 
 plt.ioff()
