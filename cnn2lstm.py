@@ -63,20 +63,15 @@ test_loader = torch.utils.data.DataLoader(
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=2)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=2)
         self.fc1 = nn.Linear(320, 50)
         self.fc2 = nn.Linear(50, 10)
 
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = F.relu(F.max_pool2d(self.conv2(x), 2))
         x = x.view(-1, 320) #just using it to extract features
-        #x = F.relu(self.fc1(x))
-        #x = F.dropout(x, training=self.training)
-        #x = self.fc2(x)
-        #return F.log_softmax(x, dim=1)
         return x
 
 
@@ -85,14 +80,13 @@ class Combine(nn.Module):
         super(Combine, self).__init__()
         self.cnn = CNN()
         self.rnn = nn.LSTM(
-            input_size=320, 
+            input_size=120, 
             hidden_size=64, 
             num_layers=1,
             batch_first=True)
         self.linear = nn.Linear(64,10)
 
     def forward(self, x):
-        print('My size:',x.size())
         batch_size, timesteps, C, H, W = x.size()
         c_in = x.view(batch_size * timesteps, C, H, W)
         c_out = self.cnn(c_in)
@@ -110,11 +104,32 @@ if args.cuda:
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
 
+def crop4(batch,view=False):
+    crop1 = batch[:,:,:7]
+    crop2 = batch[:,:,7:14]
+    crop3 = batch[:,:,14:21]
+    crop4 = batch[:,:,21:28]
+    time_series = torch.stack((crop1,crop2,crop3,crop4),dim=1)
+
+    if view:
+        import matplotlib.pyplot as plt
+        for example in range(batch.shape[0]):
+            t1 = crop1[example][0].numpy()
+            t2 = crop2[example][0].numpy()
+            t3 = crop3[example][0].numpy()
+            t4 = crop4[example][0].numpy()
+            for timestep in [t1,t2,t3,t4]:
+                plt.imshow(timestep)
+                plt.show()
+
+    return time_series
+
+
 def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
-        
-        data = np.expand_dims(data, axis=1)
+        data = crop4(data, view=False)        
+        #data = np.expand_dims(data, axis=1)
         data = torch.FloatTensor(data)
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -139,8 +154,8 @@ def test():
     test_loss = 0
     correct = 0
     for data, target in test_loader:
-        
-        data = np.expand_dims(data, axis=1)
+        data = crop4(data, view=False)
+        #data = np.expand_dims(data, axis=1)
         data = torch.FloatTensor(data)
         print(target.size)
         

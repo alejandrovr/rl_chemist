@@ -58,7 +58,10 @@ def get_screen():
     #screen = env.render(mode='rgb_array').transpose((2, 0, 1))
     screen = env.state
     screen = torch.from_numpy(screen)
-    #print(screen.shape)
+    #import matplotlib.pyplot as plt
+    #plt.imshow(screen)
+    #plt.show()
+    #input('next?')
     return screen.unsqueeze(0).transpose(1,3).float().to(device)
 
 
@@ -82,9 +85,15 @@ _, _, screen_height, screen_width = init_screen.shape
 policy_actions = env.available_actions
 n_actions = len(policy_actions)
 
-policy_net = XRayMan().to(device)
-target_net = XRayMan().to(device)
+policy_net = XRayMan()
+policy_net.wrap_up[2] = nn.Linear(512, n_actions)
+policy_net.to(device)
+
+
+target_net = XRayMan()
+target_net.wrap_up[2] = nn.Linear(512, n_actions)
 target_net.load_state_dict(policy_net.state_dict())
+target_net.to(device)
 target_net.eval()
 
 optimizer = optim.SGD(policy_net.parameters(), lr=0.01)
