@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
-from net import DQN
+from net import DQN, XRayMan
 from torchvision import datasets, models, transforms
 
 #GYM SETUP AND DEVICES
@@ -22,12 +22,6 @@ env = gym.make('tictac4-v0')
 import os
 from glob import glob
 [os.remove(i) for i in glob("/home/alejandro/rl_chemist/debug_images/*.png")]
-# set up matplotlib
-is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
-    from IPython import display
-
-plt.ion()
 
 # if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -64,13 +58,14 @@ def get_screen():
     #screen = env.render(mode='rgb_array').transpose((2, 0, 1))
     screen = env.state
     screen = torch.from_numpy(screen)
+    #print(screen.shape)
     return screen.unsqueeze(0).transpose(1,3).float().to(device)
 
 
 env.reset()
 
 #GETTING READY
-BATCH_SIZE = 10 #128
+BATCH_SIZE = 32 #128
 GAMMA = 0.999
 EPS_START = 0.9
 EPS_END = 0.05
@@ -87,14 +82,13 @@ _, _, screen_height, screen_width = init_screen.shape
 policy_actions = env.available_actions
 n_actions = len(policy_actions)
 
-policy_net = DQN(screen_height, screen_width, n_actions).to(device)
-target_net = DQN(screen_height, screen_width, n_actions).to(device)
+policy_net = XRayMan().to(device)
+target_net = XRayMan().to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.SGD(policy_net.parameters(), lr=0.0001)
-memory = ReplayMemory(30) #cartopole 10000
-
+optimizer = optim.SGD(policy_net.parameters(), lr=0.01)
+memory = ReplayMemory(1000) #cartopole 10000
 
 steps_done = 0
 policy_pred_rew = []
@@ -109,27 +103,12 @@ def select_action(state):
     steps_done += 1
     if sample > eps_threshold:
         with torch.no_grad():
-            pred_action_reward = policy_net(state) #SHOULDN'T I BE USING TARGETNET HERE? this one is not stable!
+            pred_action_reward = policy_net(state)
             prednp = pred_action_reward.cpu().detach().numpy().flatten().tolist()
             best_action_pred = env.available_actions[prednp.index(max(prednp))]
 
             #print([i for i in zip(prednp,env.available_actions)])
             policy_pred_rew.append(pred_action_reward)
-
-            inspect_batch = True
-            if inspect_batch:
-                import numpy as np
-                ccc = state.cpu().detach().numpy()
-                import matplotlib.pyplot as plt
-                image = ccc [0]
-                imaget = image.transpose(2,1,0) #make color channel last
-
-                plt.figure()
-                plt.title('act2take: {}'.format(best_action_pred))
-                plt.imshow(imaget[:,:,:])
-                plt.savefig('/home/alejandro/rl_chemist/debug_images/{}.png'.format(steps_done))
-
-                plt.close()
             return pred_action_reward.max(1)[1].view(1, 1)
     else:
         acran = random.randrange(n_actions)
@@ -140,39 +119,6 @@ def select_action(state):
 episode_durations = []
 
 
-def plot_durations():
-    plt.figure(2)
-    plt.clf()
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
-    plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    # Take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
-    plt.pause(0.001)  # pause a bit so that plots are updated
-    if is_ipython:
-        display.clear_output(wait=True)
-        display.display(plt.gcf())
-
-def plot_action_pred_val():
-    plt.figure(1)
-    actions_val = []
-    for row in policy_pred_rew:
-        pred_val_action = row.cpu().numpy().tolist()[0]
-        actions_val.append(pred_val_action)
-
-    action_rotx = [i[0] for i in actions_val]
-    if len(action_rotx)>0:
-        plt.plot(np.array(action_rotx),color="red")
-        plt.show()
-
-
-#the optimizer
 def optimize_model():
     if len(memory) < BATCH_SIZE:
         return
@@ -191,20 +137,6 @@ def optimize_model():
     state_batch = torch.cat(batch.state)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
-    inspect_batch = False
-    if inspect_batch:
-        import numpy as np
-        ccc = state_batch.cpu().detach().numpy()
-        import matplotlib.pyplot as plt
-        for debudidx in range(ccc.shape[0]):
-            image = ccc[debudidx] #first item from batch
-            imaget = image.transpose(2,1,0) #make color channel last
-            rwd = reward_batch[debudidx].item()
-            action_taken = env.available_actions[action_batch[debudidx].item()]
-            plt.figure()
-            plt.title('rwd{}_act{}'.format(rwd,action_taken))
-            plt.imshow(imaget[:,:,:])
-        input('done?')
 
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken. These are the actions which would've been taken
@@ -220,28 +152,21 @@ def optimize_model():
     #next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
     # Compute the expected Q values
     expected_state_action_values = next_state_values + reward_batch #(next_state_values * GAMMA) + reward_batch
-    print('\n\nAC:',action_batch.cpu().detach().numpy().flatten().tolist())
-    print('GT:',expected_state_action_values.cpu().detach().numpy().flatten().tolist())
-    print('PD:',state_action_values.cpu().detach().numpy().flatten().tolist())
+    #print('\n\nAC:',action_batch.cpu().detach().numpy().flatten().tolist())
+    #print('GT:',expected_state_action_values.cpu().detach().numpy().flatten().tolist())
+    #print('PD:',state_action_values.cpu().detach().numpy().flatten().tolist())
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
     # Optimize the model
-    optimizer.zero_grad()
     loss.backward()
     print('Loss:',loss.item())
-    #print('\n\n\nOptimizing...! NOT CLAMPINNNNNG')
-    for param in policy_net.parameters():
-        pass
-        #print('\nAnother layer')
-        #print('min',param.grad.data.min())
-        #print('max',param.grad.data.max())
-        #print('mean',param.grad.data.mean())
     optimizer.step()
 
+    optimizer.zero_grad()
 
 #RUN THE THING
-num_episodes = 50
+num_episodes = 100
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     current_screen = get_screen() #this is zero, right?
@@ -279,11 +204,10 @@ for i_episode in range(num_episodes):
     env.reset()
     
 print('Complete')
-plot_durations()
-torch.save(target_net.state_dict(), './new_rl_agent.torch')
 
-plt.ioff()
+plt.plot(episode_durations)
 plt.show()
+torch.save(target_net.state_dict(), './new_rl_agent.torch')
 
 
 

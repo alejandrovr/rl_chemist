@@ -73,3 +73,54 @@ class DQN(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
+
+
+
+class XRayMan(nn.Module):
+    #just use AlexNet
+    def __init__(self, activation='relu'):
+        super(XRayMan, self).__init__()
+        if activation == 'relu':
+            self.activation = nn.ReLU()
+        elif activation == 'elu':
+            self.activation = nn.ELU()
+
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=4, stride=1),
+            self.activation,
+            nn.MaxPool2d(kernel_size=3),
+        )
+        
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=4, stride=1),
+            self.activation,
+            nn.MaxPool2d(kernel_size=2),
+        )        
+        
+        self.wrap_up = nn.Sequential(
+            nn.Linear(39200, 512),
+            self.activation,
+            nn.Linear(512, 3),
+        )
+
+    def forward(self, x):
+        #print(x.shape)
+        out = self.layer1(x)
+        #print(out.shape)
+        out = self.layer2(out)
+        #print(out.shape)
+        out = out.reshape(out.size(0), -1)
+        #print(out.shape)
+        out = self.wrap_up(out)
+        #print(out.shape)
+        return out
+
+if __name__ == "__main__":
+    import numpy as np
+    net = XRayMan()
+    fake_input = np.random.rand(32, 3, 224, 224) #5 batches, 2channels, 24 box
+    fake_input = torch.from_numpy(fake_input).float()
+    yhat = net.forward(fake_input)
+    print('Done',yhat)
+
+
