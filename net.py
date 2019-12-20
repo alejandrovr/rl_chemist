@@ -3,79 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-class DQN_cartpole_original(nn.Module):
-
-    def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
-        self.bn3 = nn.BatchNorm2d(32)
-
-        # Number of Linear input connections depends on output of conv2d layers
-        # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size = 5, stride = 2):
-            return (size - (kernel_size - 1) - 1) // stride  + 1
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
-        linear_input_size = convw * convh * 32
-        self.head = nn.Linear(linear_input_size, outputs)
-
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
-    def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
-        return self.head(x.view(x.size(0), -1))
-
-
-class DQN(nn.Module):
-
-    def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
-        self.bn3 = nn.BatchNorm2d(32)
-
-        # Number of Linear input connections depends on output of conv2d layers
-        # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size = 5, stride = 2):
-            return (size - (kernel_size - 1) - 1) // stride  + 1
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
-        linear_input_size = convw * convh * 32
-        self.head = nn.Linear(linear_input_size, outputs)
-
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
-    def forward(self, x):
-        debug = False
-        if debug:
-            import numpy as np
-            #x is torch.float32
-            ccc = x.cpu().detach().numpy()
-            import matplotlib.pyplot as plt
-            if ccc.shape[0]>1:
-                for debudidx in range(ccc.shape[0]):
-                    image = ccc[debudidx] #first item from batch
-                    imaget = image.transpose(2,1,0) #make color channel last
-                    plt.figure()
-                    plt.imshow(imaget[:,:,:])
-                    input('done?')
-
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
-        return self.head(x.view(x.size(0), -1))
-
-
-
 class XRayMan(nn.Module):
     #just use AlexNet
     def __init__(self, activation='relu'):
@@ -86,7 +13,7 @@ class XRayMan(nn.Module):
             self.activation = nn.ELU()
 
         self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=4, stride=1),
+            nn.Conv2d(1, 16, kernel_size=4, stride=1),
             self.activation,
             nn.MaxPool2d(kernel_size=3),
         )
@@ -114,6 +41,48 @@ class XRayMan(nn.Module):
         out = self.wrap_up(out)
         #print(out.shape)
         return out
+
+
+
+class CNN(nn.Module):
+    def __init__(self):
+        super(CNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=2)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=2)
+        self.fc1 = nn.Linear(320, 50)
+        self.fc2 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2(x), 2)) #outputs: 200, 20, 1, 6 (b,f,h,w) #120 fingerprint
+        #each frame (timestep) is "fingerprinted" in 120 bits by the CNN filters
+        print('after CNN:',x.shape)
+        x = x.view(-1, 320) #just using it to extract features
+        return x
+
+
+class CNN_LSTM(nn.Module):
+    def __init__(self):
+        super(CNN_LSTM, self).__init__()
+        self.cnn = CNN()
+        self.rnn = nn.LSTM(
+            input_size=120, 
+            hidden_size=64, 
+            num_layers=1,
+            batch_first=True)
+        self.linear = nn.Linear(64,10)
+
+    def forward(self, x):
+        batch_size, timesteps, C, H, W = x.size() #50, 4, 1, 7, 28
+        c_in = x.view(batch_size * timesteps, C, H, W) #200, 1, 7, 28
+        c_out = self.cnn(c_in) #(75, 320)
+        r_in = c_out.view(batch_size, timesteps, -1)
+        r_out, (h_n, h_c) = self.rnn(r_in)
+        r_out2 = self.linear(r_out[:, -1, :])
+        
+        return F.log_softmax(r_out2, dim=1)
+
+
 
 if __name__ == "__main__":
     import numpy as np

@@ -17,8 +17,8 @@ class Args:
         self.cuda = True
         self.no_cuda = False
         self.seed = 1
-        self.batch_size = 50
-        self.test_batch_size = 1000
+        self.batch_size = 100
+        self.test_batch_size = 100
         self.epochs = 10
         self.lr = 0.01
         self.momentum = 0.5
@@ -70,7 +70,9 @@ class CNN(nn.Module):
 
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2(x), 2)) #outputs: 200, 20, 1, 6 (b,f,h,w) #120 fingerprint
+        #each frame (timestep) is "fingerprinted" in 120 bits by the CNN filters
+        print('after CNN:',x.shape)
         x = x.view(-1, 320) #just using it to extract features
         return x
 
@@ -87,9 +89,9 @@ class Combine(nn.Module):
         self.linear = nn.Linear(64,10)
 
     def forward(self, x):
-        batch_size, timesteps, C, H, W = x.size()
-        c_in = x.view(batch_size * timesteps, C, H, W)
-        c_out = self.cnn(c_in)
+        batch_size, timesteps, C, H, W = x.size() #50, 4, 1, 7, 28
+        c_in = x.view(batch_size * timesteps, C, H, W) #200, 1, 7, 28
+        c_out = self.cnn(c_in) #(75, 320)
         r_in = c_out.view(batch_size, timesteps, -1)
         r_out, (h_n, h_c) = self.rnn(r_in)
         r_out2 = self.linear(r_out[:, -1, :])
@@ -110,6 +112,13 @@ def crop4(batch,view=False):
     crop3 = batch[:,:,14:21]
     crop4 = batch[:,:,21:28]
     time_series = torch.stack((crop1,crop2,crop3,crop4),dim=1)
+
+    time_series_3ts = time_series[:50,:2,:]
+    time_series_4ts = time_series[50:,:]
+
+    abc = torch.cat((time_series_3ts,time_series_4ts),dim=0)
+    0/0
+
 
     if view:
         import matplotlib.pyplot as plt

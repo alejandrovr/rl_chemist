@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
-from net import DQN, XRayMan
+from net import XRayMan
 from torchvision import datasets, models, transforms
 
 #GYM SETUP AND DEVICES
@@ -62,7 +62,8 @@ def get_screen():
     #plt.imshow(screen)
     #plt.show()
     #input('next?')
-    return screen.unsqueeze(0).transpose(1,3).float().to(device)
+    
+    return screen.unsqueeze(0).unsqueeze(0).float().to(device)
 
 
 env.reset()
